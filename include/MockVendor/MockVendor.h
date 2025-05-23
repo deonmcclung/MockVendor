@@ -4,7 +4,7 @@
  *
  * @author Deon McClung
  *
- * @copyright 2023 Deon McClung
+ * @copyright 2023-2025 Deon McClung
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -79,9 +79,10 @@ public: // Definitions
     template <typename BaseMockType, typename BaseRealType>
     class BaseLink;
 
-    template <typename LinkMockType, typename LinkRealType>
-    template <typename BaseMockType, typename BaseRealType>
-    friend class MockVendor<LinkMockType, LinkRealType>::BaseLink;
+    // This is desired, but it doesn't work on all compilers (notably clang)
+    // template <typename LinkMockType, typename LinkRealType>
+    // template <typename BaseMockType, typename BaseRealType>
+    // friend class MockVendor<LinkMockType, LinkRealType>::BaseLink;
 
 public: // Methods
     MockVendor()
@@ -161,8 +162,8 @@ public: // Methods
         {
             // If we have a mock to vend...
             sMockMap[ths] = sInstance->mMockList.front();
+            sInstance->mVendedMock = sInstance->mMockList.front();
             sInstance->mMockList.pop_front();
-            sLastMockWasPopped = true;
         }
         else
         {
@@ -172,12 +173,8 @@ public: // Methods
 
         if (sBaseLinks != nullptr)
         {
-            // If we have base classes...
-            // We need to un-vend the base classes, but only if they were queued mocks (popped).
-            for (auto linkPtr = sBaseLinks; linkPtr != nullptr; linkPtr = linkPtr->getNext())
-            {
-                linkPtr->linkRestoreMockIfPopped(ths, sMockMap[ths]);
-            }
+            // Indirect recursion
+            sBaseLinks->vend(ths, sMockMap[ths]);
         }
 
         return sMockMap[ths];
@@ -192,24 +189,15 @@ public: // Methods
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
 
+        if (sBaseLinks != nullptr)
+        {
+            // Indirect recursion
+            sBaseLinks->destroy(ths);
+        }
+
         if (sMockMap.find(ths) != sMockMap.end())
         {
-            // If it is found in the map, delete it.
             sMockMap.erase(ths);
-        }
-    }
-
-    /**
-     * @brief Move the mock reference from one class instance to another
-     * @param[in] to        - A pointer to the instance receiving the mock
-     * @param[in] from      - A pointer to the instance losing the mock
-     */
-    static void move(const RealType* to, const RealType* from)
-    {
-        if (from != to)
-        {
-            sMockMap[to] = sMockMap[from];
-            sMockMap.erase(from);
         }
     }
 
@@ -259,43 +247,41 @@ private: // Definitions
 
     static constexpr size_t MAX_LEAKED_REFS = 15;
 
-private: // Methods
-    static void _addBaseLink(BaseLinkBase* newLink, BaseLinkBase*& next)
+public: // Methods (should be private)
+
+    // Assign a base link node to this MockVendor
+    static void _assignBase(BaseLinkBase* baseLinkNode)
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        next = sBaseLinks;
-        sBaseLinks = newLink;
+        sBaseLinks = baseLinkNode;
     }
 
-    static bool _wasLastMockPopped()
+    static void _mapMock(const RealType* ths, const std::shared_ptr<MockType>& mock)
     {
-        std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        return sLastMockWasPopped;
-    }
+        sMockMap[ths] = mock;
 
-    static void _restoreMock(const RealType* ths, std::shared_ptr<MockType>& poppedMock, const std::shared_ptr<MockType>& inheritedMock)
-    {
-        std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-
-        if (sInstance != nullptr)
+        if (sInstance != nullptr && sInstance->mVendedMock != nullptr)
         {
-            sInstance->mMockList.push_front(poppedMock);
+            sInstance->mMockList.push_front(sInstance->mVendedMock);
+            sInstance->mVendedMock = nullptr;
         }
 
-        sMockMap[ths] = inheritedMock;
-
-        sLastMockWasPopped = false;
+        if (sBaseLinks != nullptr)
+        {
+            // Indirect recursion
+            sBaseLinks->vend(ths, mock);
+        }
     }
 
 private: // Static Members
     inline static MockVendor*       sInstance{ nullptr };
     inline static MockMap           sMockMap;
-    inline static bool              sLastMockWasPopped{ false };
     inline static BaseLinkBase*     sBaseLinks{ nullptr };
 
 private: // Members
     MockList                        mMockList;
     std::shared_ptr<MockType>       mStaticMock;
+    std::shared_ptr<MockType>       mVendedMock;
 
 }; // class MockVendor
 
@@ -309,21 +295,13 @@ template <typename MockType, typename RealType>
 class MockVendor<MockType, RealType>::BaseLinkBase
 {
 public: // Methods
-    virtual void linkRestoreMockIfPopped(const RealType* ths, const std::shared_ptr<MockType>& inheritedMock) = 0;
-
-    BaseLinkBase* getNext() const { return mNext; }
+    virtual void vend(const RealType* ths, const std::shared_ptr<MockType>& inheritedMock) = 0;
+    virtual void destroy(const RealType* ths) = 0;
 
 protected: // Methods
     // Construction only by inheriting classes
-    BaseLinkBase()
-    {
-        // Automatically add the link to the MockVendor
-        MockVendor<MockType, RealType>::_addBaseLink(this, mNext);
-    }
+    BaseLinkBase() = default;
     virtual ~BaseLinkBase() = default;
-
-private:
-    BaseLinkBase* mNext{ nullptr };
 };
 
 /**
@@ -339,16 +317,25 @@ template <typename BaseMockType, typename BaseRealType>
 class MockVendor<MockType, RealType>::BaseLink : public BaseLinkBase
 {
 public: // Methods
-    BaseLink() = default;
+    BaseLink()
+    {
+        MockVendor<MockType, RealType>::_assignBase(this);
+    }
+
     virtual ~BaseLink() = default;
 
-    virtual void linkRestoreMockIfPopped(const RealType* ths, const std::shared_ptr<MockType>& inheritedMock) override
+    virtual void vend(const RealType* ths, const std::shared_ptr<MockType>& inheritedMock) override
     {
-        if (MockVendor<BaseMockType, BaseRealType>::_wasLastMockPopped())
-        {
-            auto poppedMock = MockVendor<BaseMockType, BaseRealType>::mock(ths);
-            MockVendor<BaseMockType, BaseRealType>::_restoreMock(ths, poppedMock, inheritedMock);
-        }
+        MockVendor<BaseMockType, BaseRealType>::_mapMock(ths, inheritedMock);
+
+        // The next is recursed from inside _mapMock
+    }
+
+    virtual void destroy(const RealType* ths) override
+    {
+        MockVendor<BaseMockType, BaseRealType>::destroy(ths);
+
+        // The next is recursed from inside destroy
     }
 };
 
