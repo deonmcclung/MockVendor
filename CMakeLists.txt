@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.9)
 
 project(MockVendor CXX)
 
@@ -12,3 +12,24 @@ target_include_directories(mockvendor
 )
 
 install(DIRECTORY include/MockVendor TYPE INCLUDE)
+
+if (${MOCKVENDOR_TESTS})
+    enable_testing()
+
+    include(GoogleTest)
+    find_package(GTest)
+
+    add_executable(
+      test_mockvendor
+      tests/mockvendor_tests.cpp
+    )
+    target_link_libraries(
+      test_mockvendor
+      GTest::gmock_main
+    )
+    target_include_directories(test_mockvendor
+        PRIVATE ${CMAKE_SOURCE_DIR}/include
+    )
+
+    gtest_discover_tests(test_mockvendor)
+endif()
