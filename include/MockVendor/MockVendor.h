@@ -171,10 +171,10 @@ public: // Methods
             sMockMap[ths] = std::make_shared<testing::NiceMock<MockType>>();
         }
 
-        if (sBaseLinks != nullptr)
+        for (auto& baseLink : sBaseLinks)
         {
             // Indirect recursion
-            sBaseLinks->vend(ths, sMockMap[ths]);
+            baseLink->vend(ths, sMockMap[ths]);
         }
 
         return sMockMap[ths];
@@ -189,10 +189,10 @@ public: // Methods
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
 
-        if (sBaseLinks != nullptr)
+        for (auto& baseLink : sBaseLinks)
         {
             // Indirect recursion
-            sBaseLinks->destroy(ths);
+            baseLink->destroy(ths);
         }
 
         if (sMockMap.find(ths) != sMockMap.end())
@@ -244,6 +244,7 @@ private: // Definitions
 
     using MockList = std::list<std::shared_ptr<MockType>>;
     using MockMap = std::map<const RealType*, std::shared_ptr<MockType>>;
+    using BaseList = std::list<BaseLinkBase*>;
 
     static constexpr size_t MAX_LEAKED_REFS = 15;
 
@@ -253,7 +254,11 @@ public: // Methods (should be private)
     static void _assignBase(BaseLinkBase* baseLinkNode)
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        sBaseLinks = baseLinkNode;
+        if (std::find(sBaseLinks.begin(), sBaseLinks.end(), baseLinkNode) == sBaseLinks.end())
+        {
+            // If not already present...
+            sBaseLinks.push_back(baseLinkNode);
+        }
     }
 
     static void _mapMock(const RealType* ths, const std::shared_ptr<MockType>& mock)
@@ -266,17 +271,17 @@ public: // Methods (should be private)
             sInstance->mVendedMock = nullptr;
         }
 
-        if (sBaseLinks != nullptr)
+        for (auto& baseLink : sBaseLinks)
         {
             // Indirect recursion
-            sBaseLinks->vend(ths, mock);
+            baseLink->vend(ths, mock);
         }
     }
 
 private: // Static Members
     inline static MockVendor*       sInstance{ nullptr };
     inline static MockMap           sMockMap;
-    inline static BaseLinkBase*     sBaseLinks{ nullptr };
+    inline static BaseList          sBaseLinks;
 
 private: // Members
     MockList                        mMockList;
