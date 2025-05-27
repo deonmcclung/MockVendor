@@ -1,0 +1,6 @@
+1.0.1 - Deon McClung - May 27, 2025
+- Fix an issue with baselinks (inheritance support).
+- Add unit tests
+
+1.0.0 - Deon McClung - 2023
+Initial release of the library
