@@ -69,72 +69,24 @@ private: // Members
  * and pushes on mock instances in the order of expected real-class instantiation inside the code under
  * test.
  */
-template <typename Mock, typename Real>
+template <typename Mock, typename Real, typename... BaseMockVendors>
 class MockVendor
 {
 public: // Definitions
     using MockType = Mock;
     using RealType = Real;
 
-    template <typename BaseMockType, typename BaseRealType>
-    class BaseLink;
-
-    // This is desired, but it doesn't work on all compilers (notably clang)
-    // template <typename LinkMockType, typename LinkRealType>
-    // template <typename BaseMockType, typename BaseRealType>
-    // friend class MockVendor<LinkMockType, LinkRealType>::BaseLink;
-
 public: // Methods
     MockVendor()
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        sInstance = this;
+        _construct<MockType, RealType, BaseMockVendors...>();
     }
 
     virtual ~MockVendor()
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-
-        // Checks
-        if (!mMockList.empty())
-        {
-            ADD_FAILURE() << "Failure to consume all queued mocks for " << typeid(MockType).name();
-        }
-
-        if (!sMockMap.empty())
-        {
-            std::ostringstream str;
-            str << "Not all mock instances were destroyed - " << sMockMap.size() << " remaining";
-            if (MAX_LEAKED_REFS > 0)
-            {
-                size_t cnt = 0;
-                for (auto& ref : sMockMap)
-                {
-                    str << std::endl
-                        << "   Real: " << std::left << std::setw(sizeof(void*)*2 + 2) << std::hex << ref.first
-                        << "   Mock: " << std::left << std::setw(sizeof(void*)*2 + 2) << std::hex << ref.second.get();
-                    ++cnt;
-                    if (cnt >= MAX_LEAKED_REFS)
-                    {
-                        if (sMockMap.size() > MAX_LEAKED_REFS)
-                        {
-                            str << std::endl << "    More...";
-                        }
-                        break;
-                    }
-                }
-            }
-
-            ADD_FAILURE() << str.str();
-
-            // It is important to print the message above declaring any mock leaks because the below
-            // clear will wipe out that information.
-            // However, it is important to clear so that subsequent tests are not affected and may
-            // themselves report any leaks.
-            sMockMap.clear();
-        }
-
-        sInstance = nullptr;
+        _destruct<MockType, RealType, BaseMockVendors...>();
     }
 
     /**
@@ -144,7 +96,7 @@ public: // Methods
     void queueMock(const std::shared_ptr<MockType>& mock)
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        mMockList.push_back(mock);
+        _queueMock<MockType, RealType, BaseMockVendors...>(mock);
     }
 
     /**
@@ -154,30 +106,20 @@ public: // Methods
      *          If a mock is queued for vending, then it will be delivered. Otherwise, this method
      *          will vend a new mock with no expectations and default return values.
      */
-    static std::shared_ptr<MockType> vend(const RealType* ths)
+    static void vend(const RealType* ths)
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-
-        if (sInstance != nullptr && !sInstance->mMockList.empty())
+        if (!sMockList.empty())
         {
             // If we have a mock to vend...
-            sMockMap[ths] = sInstance->mMockList.front();
-            sInstance->mVendedMock = sInstance->mMockList.front();
-            sInstance->mMockList.pop_front();
+            sMockMap[ths] = sMockList.front();
+            sMockList.pop_front();
         }
         else
         {
             // Otherwise, create a mock to vend.
             sMockMap[ths] = std::make_shared<testing::NiceMock<MockType>>();
         }
-
-        if (sBaseLinks != nullptr)
-        {
-            // Indirect recursion
-            sBaseLinks->vend(ths, sMockMap[ths]);
-        }
-
-        return sMockMap[ths];
     }
 
     /**
@@ -188,13 +130,6 @@ public: // Methods
     static void destroy(const RealType* ths)
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-
-        if (sBaseLinks != nullptr)
-        {
-            // Indirect recursion
-            sBaseLinks->destroy(ths);
-        }
-
         if (sMockMap.find(ths) != sMockMap.end())
         {
             sMockMap.erase(ths);
@@ -218,7 +153,7 @@ public: // Methods
     void setStaticMock(const std::shared_ptr<MockType>& staticMock)
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        mStaticMock = staticMock;
+        _setStaticMock<MockType, RealType>(staticMock);
     }
 
     /**
@@ -228,9 +163,9 @@ public: // Methods
     static std::shared_ptr<MockType> staticMock()
     {
         std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        if (sInstance != nullptr && sInstance->mStaticMock != nullptr)
+        if (sStaticMock != nullptr)
         {
-            return sInstance->mStaticMock;
+            return sStaticMock;
         }
         else
         {
@@ -240,103 +175,149 @@ public: // Methods
     }
 
 private: // Definitions
-    class BaseLinkBase;
-
     using MockList = std::list<std::shared_ptr<MockType>>;
     using MockMap = std::map<const RealType*, std::shared_ptr<MockType>>;
 
     static constexpr size_t MAX_LEAKED_REFS = 15;
 
-public: // Methods (should be private)
 
-    // Assign a base link node to this MockVendor
-    static void _assignBase(BaseLinkBase* baseLinkNode)
+private: // Methods
+    template <typename MV>
+    static void _construct()
     {
-        std::scoped_lock<std::recursive_mutex> lock(gMockVendorMutex);
-        sBaseLinks = baseLinkNode;
+        ++MV::sInstanceCount;
     }
 
-    static void _mapMock(const RealType* ths, const std::shared_ptr<MockType>& mock)
+    template <typename M, typename R>
+    static void _construct()
     {
-        sMockMap[ths] = mock;
-
-        if (sInstance != nullptr && sInstance->mVendedMock != nullptr)
-        {
-            sInstance->mMockList.push_front(sInstance->mVendedMock);
-            sInstance->mVendedMock = nullptr;
-        }
-
-        if (sBaseLinks != nullptr)
-        {
-            // Indirect recursion
-            sBaseLinks->vend(ths, mock);
-        }
+        // Terminate the recursion
+        _construct<MockVendor<M, R>>();
     }
 
-private: // Static Members
-    inline static MockVendor*       sInstance{ nullptr };
-    inline static MockMap           sMockMap;
-    inline static BaseLinkBase*     sBaseLinks{ nullptr };
+    template <typename M, typename R, typename Base, typename... OtherBases>
+    static void _construct()
+    {
+        // Recurse for remaining bases...
+        _construct<typename Base::MockType, typename Base::RealType, OtherBases...>();
 
-private: // Members
-    MockList                        mMockList;
-    std::shared_ptr<MockType>       mStaticMock;
-    std::shared_ptr<MockType>       mVendedMock;
+        _construct<MockVendor<M, R, Base, OtherBases...>>();
+    }
+
+    template <typename MV>
+    static void _destruct()
+    {
+        if (--MV::sInstanceCount == 0)
+        {
+            // Checks
+            if (!MV::sMockList.empty())
+            {
+                ADD_FAILURE() << "Failure to consume all queued mocks for " << typeid(typename MV::MockType).name();
+            }
+
+            if (!MV::sMockMap.empty())
+            {
+                std::ostringstream str;
+                str << "Not all mock instances were destroyed - " << MV::sMockMap.size() << " remaining";
+                if (MAX_LEAKED_REFS > 0)
+                {
+                    size_t cnt = 0;
+                    for (auto& ref : MV::sMockMap)
+                    {
+                        str << std::endl
+                            << "   Real: " << std::left << std::setw(sizeof(void*)*2 + 2) << std::hex << ref.first
+                            << "   Mock: " << std::left << std::setw(sizeof(void*)*2 + 2) << std::hex << ref.second.get();
+                        ++cnt;
+                        if (cnt >= MAX_LEAKED_REFS)
+                        {
+                            if (MV::sMockMap.size() > MAX_LEAKED_REFS)
+                            {
+                                str << std::endl << "    More...";
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                ADD_FAILURE() << str.str();
+
+                // Now that the above information is printed. We need to wipe out these variables so
+                // they don't interfere with other tests.
+                MV::sMockMap.clear();
+                MV::sMockList.clear();
+                MV::sStaticMock.reset();
+            }
+
+        } // if (--sInstanceCount == 0)
+    }
+
+    template <typename M, typename R>
+    static void _destruct()
+    {
+        // Terminate the recursion
+        _destruct<MockVendor<M, R>>();
+    }
+
+    template <typename M, typename R, typename Base, typename... OtherBases>
+    static void _destruct()
+    {
+        _destruct<MockVendor<M, R, Base, OtherBases...>>();
+
+        // Recurse for remaining bases...
+        _destruct<typename Base::MockType, typename Base::RealType, OtherBases...>();
+    }
+
+    template <typename MV>
+    static void _queueMock(const std::shared_ptr<typename MV::MockType>& mock)
+    {
+        MV::sMockList.push_back(mock);
+    }
+
+    template <typename M, typename R>
+    static void _queueMock(const std::shared_ptr<M>& mock)
+    {
+        // Terminate the recursion
+        _queueMock<MockVendor<M, R>>(mock);
+    }
+
+    template <typename M, typename R, typename Base, typename... OtherBases>
+    static void _queueMock(const std::shared_ptr<M>& mock)
+    {
+        _queueMock<MockVendor<M, R, Base, OtherBases...>>(mock);
+
+        // Recurse the remaining bases...
+        _queueMock<typename Base::MockType, typename Base::RealType, OtherBases...>(mock);
+    }
+
+    template <typename MV>
+    static void _setStaticMock(const std::shared_ptr<typename MV::MockType>& staticMock)
+    {
+        MV::sStaticMock = staticMock;
+    }
+
+    template <typename M, typename R>
+    static void _setStaticMock(const std::shared_ptr<M>& staticMock)
+    {
+        // Terminate the recursion
+        _setStaticMock<MockVendor<M, R>>(staticMock);
+    }
+
+    template <typename M, typename R, typename Base, typename... OtherBases>
+    static void _setStaticMock(const std::shared_ptr<M>& staticMock)
+    {
+        _setStaticMock<MockVendor<M, R, Base, OtherBases...>>(staticMock);
+        
+        // Recurse the remaining bases...
+        _setStaticMock<typename Base::MockType, typename Base::RealType, OtherBases...>(staticMock);
+    }
+
+public: // Static Members
+    inline static uint32_t                      sInstanceCount{0};
+    inline static MockMap                       sMockMap;
+    inline static MockList                      sMockList;
+    inline static std::shared_ptr<MockType>     sStaticMock;
 
 }; // class MockVendor
 
-
-/**
- * @brief This is a common base class for base links
- * @details Although this is a public class, the end user does not use these directly,
- * but instead declares BaseLink classes, which inherit from this class.
- */
-template <typename MockType, typename RealType>
-class MockVendor<MockType, RealType>::BaseLinkBase
-{
-public: // Methods
-    virtual void vend(const RealType* ths, const std::shared_ptr<MockType>& inheritedMock) = 0;
-    virtual void destroy(const RealType* ths) = 0;
-
-protected: // Methods
-    // Construction only by inheriting classes
-    BaseLinkBase() = default;
-    virtual ~BaseLinkBase() = default;
-};
-
-/**
- * @brief Declare a base class connection between Real and Mock types.
- * @details The user declares a global instance of this class to identify or link
- * together inherited and derived-class relationships. This is only done when the
- * base class has an attending mock type.
- * @tparam BaseMockType     The type of the mock for the base class
- * @tparam BaseRealType     The actual code type of the base class
- */
-template <typename MockType, typename RealType>
-template <typename BaseMockType, typename BaseRealType>
-class MockVendor<MockType, RealType>::BaseLink : public BaseLinkBase
-{
-public: // Methods
-    BaseLink()
-    {
-        MockVendor<MockType, RealType>::_assignBase(this);
-    }
-
-    virtual ~BaseLink() = default;
-
-    virtual void vend(const RealType* ths, const std::shared_ptr<MockType>& inheritedMock) override
-    {
-        MockVendor<BaseMockType, BaseRealType>::_mapMock(ths, inheritedMock);
-
-        // The next is recursed from inside _mapMock
-    }
-
-    virtual void destroy(const RealType* ths) override
-    {
-        MockVendor<BaseMockType, BaseRealType>::destroy(ths);
-
-        // The next is recursed from inside destroy
-    }
-};
 
 #endif // __MOCK_VENDOR_H__

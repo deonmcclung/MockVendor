@@ -17,12 +17,7 @@ public: // Methods
     MOCK_METHOD(int, obj_b_v_func, ());
 };
 
-using ObjCMockVendor = MockVendor<ObjCMock, ObjC>;
-
-// Establish a link that says ObjC extends ObjB (which extends ObjA).
-// We must actually declare a global object of this type.
-// At present, only one base class is supported (future will support more)
-ObjCMockVendor::BaseLink<ObjBMock, ObjB> g_obj_c_obj_b_link;
+using ObjCMockVendor = MockVendor<ObjCMock, ObjC, ObjBMockVendor>;
 
 
 // This is a mock implementation of ObjA.
