@@ -12,6 +12,7 @@ class ObjAMock
 public: // Methods
     MOCK_METHOD(void, open, (const std::string& filename));
     MOCK_METHOD(void, close, ());
+    MOCK_METHOD(void, obj_a_func, ());
 };
 
 using ObjAMockVendor = MockVendor<ObjAMock, ObjA>;

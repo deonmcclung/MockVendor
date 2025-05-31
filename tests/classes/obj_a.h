@@ -16,6 +16,8 @@ public: // Methods
 
     void close();
 
+    void obj_a_func();
+
 private:
     // Private methods don't require mocking or a sub function,
     // unless they are virtual.

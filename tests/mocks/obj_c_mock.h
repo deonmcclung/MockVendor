@@ -20,7 +20,7 @@ public: // Methods
 using ObjCMockVendor = MockVendor<ObjCMock, ObjC, ObjBMockVendor>;
 
 
-// This is a mock implementation of ObjA.
+// This is a mock implementation of ObjC.
 
 ObjC::ObjC()
 {
