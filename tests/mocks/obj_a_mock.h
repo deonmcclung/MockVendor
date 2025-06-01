@@ -42,3 +42,7 @@ void ObjA::close()
     return ObjAMockVendor::mock(this)->close();
 }
 
+void ObjA::obj_a_func()
+{
+    return ObjAMockVendor::mock(this)->obj_a_func();
+}

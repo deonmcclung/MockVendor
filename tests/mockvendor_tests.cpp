@@ -12,20 +12,20 @@
  */
 
 // Headers for collaborative objects in use
-// #include "classes/obj_a.h"
-// #include "classes/obj_b.h"
-// #include "classes/obj_c.h"
-// #include "classes/obj_d.h"
+#include "classes/obj_a.h"
+#include "classes/obj_b.h"
+#include "classes/obj_c.h"
+#include "classes/obj_d.h"
 #include "classes/obj_e.h"
 #include "classes/obj_f.h"
 #include "classes/obj_g.h"
 #include "classes/obj_h.h"
 
 // Mocks for collaborating objects
-// #include "mocks/obj_a_mock.h"
-// #include "mocks/obj_b_mock.h"
-// #include "mocks/obj_c_mock.h"
-// #include "mocks/obj_d_mock.h"
+#include "mocks/obj_a_mock.h"
+#include "mocks/obj_b_mock.h"
+#include "mocks/obj_c_mock.h"
+#include "mocks/obj_d_mock.h"
 #include "mocks/obj_e_mock.h"
 #include "mocks/obj_f_mock.h"
 #include "mocks/obj_g_mock.h"
@@ -70,93 +70,101 @@ class MockVendorTests : public testing::Test
 {
 };
 
-// TEST_F(MockVendorTests, SimpleClass)
-// {
-//     // Test setup
-//     auto obj_a_mock = std::make_shared<ObjAMock>();
+TEST_F(MockVendorTests, SimpleClass)
+{
+    // Test setup
+    auto obj_a_mock = std::make_shared<ObjAMock>();
 
-//     // Add expectations on the mock
-//     EXPECT_CALL(*obj_a_mock, open(_));
-//     EXPECT_CALL(*obj_a_mock, close());
+    // Add expectations on the mock
+    EXPECT_CALL(*obj_a_mock, open(_));
+    EXPECT_CALL(*obj_a_mock, close());
 
-//     // Create a mock vendor for objects of ObjA.
-//     ObjAMockVendor obj_a_mv;
+    // Create a mock vendor for objects of ObjA.
+    ObjAMockVendor obj_a_mv;
 
-//     // Queue the mock to be created when the first ObjA is created.
-//     obj_a_mv.queueMock(obj_a_mock);
+    // Queue the mock to be created when the first ObjA is created.
+    obj_a_mv.queueMock(obj_a_mock);
 
-//     // Perform the test
-//     // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-//     // The follow code could exist at any depth in the code under test.
+    // Perform the test
+    // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    // The follow code could exist at any depth in the code under test.
 
-//     // Create an object of ObjA.
-//     auto obj_a = std::make_shared<ObjA>();
-//     obj_a->open("some_filename");
-//     obj_a->close();
+    // Create an object of ObjA.
+    auto obj_a = std::make_shared<ObjA>();
+    obj_a->open("some_filename");
+    obj_a->close();
 
-//     // Deleting the object completes its lifecycle. Objects under test
-//     // must be cleaned up for proper accounting.
-//     obj_a.reset();
+    // Deleting the object completes its lifecycle. Objects under test
+    // must be cleaned up for proper accounting.
+    obj_a.reset();
 
-//     // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-//     // End code under test
+    // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    // End code under test
     
-//     // The test could perform additional validation, or not.
+    // The test could perform additional validation, or not.
     
-//     // As the MockVendor(s) go out of scope, they check that all expected
-//     // mocked objects were created and destroyed.
-// }
+    // As the MockVendor(s) go out of scope, they check that all expected
+    // mocked objects were created and destroyed.
+}
 
 
-// TEST_F(MockVendorTests, SingleInheritance)
-// {
-//     // Test setup
+TEST_F(MockVendorTests, SingleInheritance)
+{
+    // Test setup
+
+    //
+    // B----A
+    //
+
+    // Objects and mocks of ObjB contain all methods of ObjA.
+    auto obj_b_mock = std::make_shared<ObjBMock>();
+
+    // Add expectations on the mock
+    EXPECT_CALL(*obj_b_mock, open(_));
+    EXPECT_CALL(*obj_b_mock, close());
+    EXPECT_CALL(*obj_b_mock, obj_b_func()).WillRepeatedly(testing::Return(5));
+    EXPECT_CALL(*obj_b_mock, obj_b_v_func()).WillRepeatedly(testing::Return(6));
+
+    // Create a mock vendor for objects of ObjB.
+    ObjBMockVendor obj_b_mv;
+
+    // Queue the mock to be created when the first ObjB is created.
+    obj_b_mv.queueMock(obj_b_mock);
+
+    // Perform the test
+    // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    // The follow code could exist at any depth in the code under test.
+
+    // Create an object of ObjA.
+    auto obj_b = std::make_shared<ObjB>();
+    obj_b->open("some_filename");
+    obj_b->close();
+    auto value_to_return1 = obj_b->obj_b_func();
+    auto value_to_return2 = obj_b->obj_b_v_func();
+
+    // Deleting the object completes its lifecycle. Objects under test
+    // must be cleaned up for proper accounting.
+    obj_b.reset();
+
+    // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    // End code under test
     
-//     // Objects and mocks of ObjB contain all methods of ObjA.
-//     auto obj_b_mock = std::make_shared<ObjBMock>();
+    // The test could perform additional validation, or not.
+    EXPECT_EQ(5, value_to_return1);
+    EXPECT_EQ(6, value_to_return2);
 
-//     // Add expectations on the mock
-//     EXPECT_CALL(*obj_b_mock, open(_));
-//     EXPECT_CALL(*obj_b_mock, close());
-//     EXPECT_CALL(*obj_b_mock, obj_b_func()).WillRepeatedly(testing::Return(5));
-//     EXPECT_CALL(*obj_b_mock, obj_b_v_func()).WillRepeatedly(testing::Return(6));
-
-//     // Create a mock vendor for objects of ObjB.
-//     ObjBMockVendor obj_b_mv;
-
-//     // Queue the mock to be created when the first ObjB is created.
-//     obj_b_mv.queueMock(obj_b_mock);
-
-//     // Perform the test
-//     // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-//     // The follow code could exist at any depth in the code under test.
-
-//     // Create an object of ObjA.
-//     auto obj_b = std::make_shared<ObjB>();
-//     obj_b->open("some_filename");
-//     obj_b->close();
-//     auto value_to_return1 = obj_b->obj_b_func();
-//     auto value_to_return2 = obj_b->obj_b_v_func();
-
-//     // Deleting the object completes its lifecycle. Objects under test
-//     // must be cleaned up for proper accounting.
-//     obj_b.reset();
-
-//     // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-//     // End code under test
-    
-//     // The test could perform additional validation, or not.
-//     EXPECT_EQ(5, value_to_return1);
-//     EXPECT_EQ(6, value_to_return2);
-
-//     // As the MockVendor(s) go out of scope, they check that all expected
-//     // mocked objects were created and destroyed.
-// }
+    // As the MockVendor(s) go out of scope, they check that all expected
+    // mocked objects were created and destroyed.
+}
 
 // TEST_F(MockVendorTests, MultigenerationalObject)
 // {
 //     // Test setup
-    
+
+//     //
+//     // C----B----A
+//     //
+     
 //     // Objects and mocks of ObjC contain all methods of ObjB and ObjA.
 //     auto obj_c_mock = std::make_shared<ObjCMock>();
 
@@ -279,19 +287,19 @@ TEST_F(MockVendorTests, DoubleInheritance)
     // Queue the mock to be created when the first ObjE is created.
     obj_e_mv.queueMock(obj_e_mock);
 
-    // // Perform the test
-    // // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-    // // The follow code could exist at any depth in the code under test.
+    // Perform the test
+    // vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+    // The follow code could exist at any depth in the code under test.
 
-    // // Create an object of ObjE.
-    // auto obj_e = std::make_shared<ObjE>();
-    // obj_e->obj_e_func();
-    // obj_e->obj_a_func();
-    // obj_e->obj_d_func();
+    // Create an object of ObjE.
+    auto obj_e = std::make_shared<ObjE>();
+    obj_e->obj_e_func();
+    obj_e->obj_a_func();
+    obj_e->obj_d_func();
 
-    // // Deleting the object completes its lifecycle. Objects under test
-    // // must be cleaned up for proper accounting.
-    // obj_e.reset();
+    // Deleting the object completes its lifecycle. Objects under test
+    // must be cleaned up for proper accounting.
+    obj_e.reset();
 
     // // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
     // // End code under test
